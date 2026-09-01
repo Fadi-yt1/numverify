@@ -1,4 +1,4 @@
-# Num Validator — Global Phone Number Validation & Lookup
+# Phone Number Validator — Global Validation & Lookup
 
 A static, no-login web app that validates phone numbers anywhere in the world and returns a
 full profile of the number: validity, carrier, line type, country and location.

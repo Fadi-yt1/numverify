@@ -1,5 +1,5 @@
 /* ============================================================
-   Num Validator — Global Phone Number Validation & Lookup
+   Phone Number Validator — Global Validation & Lookup
    ============================================================ */
 
 :root {
@@ -413,7 +413,7 @@ select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px
 .footer-inner { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; }
 .footer-inner .micro { margin: 4px 0 0; }
 .footer-links { display: flex; gap: 20px; font-size: .86rem; align-items: center; }
-.legal { margin-top: 22px; max-width: 760px; }
+.legal { margin-top: 22px; }
 
 /* ---------------- dialog ---------------- */
 .key-dialog {

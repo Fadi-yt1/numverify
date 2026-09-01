@@ -1,5 +1,5 @@
 /* ============================================================
-   Num Validator — client-side phone number validation & lookup
+   Phone Number Validator — client-side phone number validation & lookup
    No backend, no login. Talks to the numverify API directly.
    ============================================================ */
 (function () {
