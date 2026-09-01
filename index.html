@@ -182,7 +182,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </span>
           <h3>DNC Complaint Check <em>US</em></h3>
-          <p>See how often a US number has been reported to the FTC for unwanted calls — complaint count, how recent, how many were robocalls, and what callers said it was about.</p>
+          <p>Scan a recent sample of FTC unwanted-call complaints from a US number’s area code and see whether that number turns up in them, alongside the robocall share and what the calls were about.</p>
         </article>
       </div>
     </div>
@@ -248,11 +248,16 @@
         </details>
         <details>
           <summary>Does the DNC check tell me if a number is on the Do Not Call Registry?</summary>
-          <p><strong>No.</strong> The National Do Not Call Registry — the list of consumers who opted out of telemarketing — has no public API. Telemarketers reach it by registering at
+          <p><strong>No</strong>, twice over. First, the National Do Not Call Registry — the list of consumers who opted out of telemarketing — has no public API. Telemarketers reach it by registering at
             <a href="https://telemarketing.donotcall.gov" target="_blank" rel="noopener noreferrer">telemarketing.donotcall.gov</a>
             for an Organization ID and SAN and downloading per-area-code lists; consumers check their own number at
             <a href="https://www.donotcall.gov" target="_blank" rel="noopener noreferrer">donotcall.gov</a>.
-            What this site queries is a different FTC dataset: consumer <em>complaints</em> about unwanted calls. It answers “has this number been reported for robocalls”, not “is this number registered”.</p>
+            What this site queries is a different FTC dataset: consumer <em>complaints</em> about unwanted calls. Second, even that dataset cannot be filtered by the number that placed the call — the FTC API filters on date, state, area code and robocall flag only, and the caller's number comes back as a field rather than a search key. So the check pulls a recent sample of complaints from the number's own area code and tells you whether it appears among them.</p>
+        </details>
+
+        <details>
+          <summary>What does “not found in this sample” mean?</summary>
+          <p>Exactly that, and no more. The sample is at most 50 complaints from the number's area code over the last 30 days — a slice of a stream that runs to hundreds of thousands of complaints a month nationwide. A number can be a heavy robocaller and still be absent from that slice. A <em>hit</em> is a strong signal; a miss is weak evidence, not a clean bill of health.</p>
         </details>
 
         <details>

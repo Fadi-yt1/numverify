@@ -42,29 +42,51 @@ The site is then served at `https://<owner>.github.io/<repo>/`.
 ## DNC complaint check — what it is, and what it is not
 
 The **DNC complaints (US)** tab queries the FTC's Do Not Call *complaint* dataset through
-[api.data.gov](https://api.data.gov) (`api.ftc.gov/v0/dnc-complaints`). Enter a 10-digit US
-number and it reports how many complaints have been filed against it, how recent they are,
-how many were robocalls, which states reported it, and what callers said the calls were about.
+[api.data.gov](https://api.data.gov) (`api.ftc.gov/v0/dnc-complaints`).
 
-**It does not check the National Do Not Call Registry.** The registry — the list of consumers
-who opted out of telemarketing — has no public API and is not reachable with an api.data.gov
-key. Telemarketers access it by registering at
+Two limits shape what this feature can honestly do, and both are worth understanding before
+you rely on it.
+
+**1. It is not the Do Not Call Registry.** The registry — the list of consumers who opted out
+of telemarketing — has no public API and is not reachable with an api.data.gov key.
+Telemarketers access it by registering at
 [telemarketing.donotcall.gov](https://telemarketing.donotcall.gov) for an Organization ID and
 SAN and downloading per-area-code lists; consumers check their own number at
-[donotcall.gov](https://www.donotcall.gov).
+[donotcall.gov](https://www.donotcall.gov). Lawful outbound telemarketing still requires that
+subscription — this is a reputation signal, not a compliance scrub.
 
-So this is a *reputation* signal — useful for screening inbound calls or spotting known
-robocallers — and **not** a compliance scrub. Lawful outbound telemarketing still requires a
-registry subscription. The UI says so on the result card and in the FAQ.
+**2. The API cannot be filtered by the number that placed the call.** Its documented filters
+are `created_date`, `created_date_from`/`created_date_to`, `state`, `area_code` and
+`is_robocall`. The caller's number (`company-phone-number`) comes back as a *response field*,
+never as a search key. There is no way to ask "how many complaints name this number".
 
-Two implementation notes:
+So the check does the closest honest thing: it pulls a recent window of complaints from the
+entered number's own **area code** (up to 50 records — the endpoint's cap — over the last 30
+days) and reports whether that number appears among them, along with the robocall share and
+the most common subjects in the sample.
 
-- The FTC response shape is read defensively (`dncRows` / `dncField` in `app.js`): rows may
-  arrive as a bare array or under `data`/`results`/`records`, and fields may sit directly on a
-  row or under a JSON:API `attributes` object, in hyphen, snake or camel spelling.
-- Results are re-filtered client-side against the number that was searched. If the API ever
-  ignores the `company_phone_number` parameter, the card reports zero matches and warns you
-  rather than presenting unrelated complaints as that number's.
+That asymmetry matters and the UI states it plainly:
+
+- **A hit is a strong signal.** The number really was reported, and the true total is probably
+  higher than the sample shows.
+- **A miss is weak evidence.** It means "absent from this sample", not "clean". The FTC
+  receives hundreds of thousands of complaints a month nationwide; 50 records from one area
+  code over 30 days is a thin slice.
+
+Implementation notes:
+
+- `dncQueries` builds a ladder of parameter sets — area code plus date window, then area code
+  alone, then unfiltered — and falls back down it if the API rejects a parameter, so an
+  unsupported filter degrades the sample's scope instead of failing the lookup. The scope
+  actually used is shown on the result card.
+- Errors are read from both envelopes in play: api.data.gov's `{"error":{code,message}}` and
+  the FTC's JSON:API `{"errors":[{status,title,detail}]}`. Missing that second shape is what
+  once made a plain HTTP 400 surface as a useless "unexpected payload".
+- A failure that is not JSON reports its HTTP status and a slice of the body, and a real API
+  error is preferred over a later relay timeout when both occur in one fallback chain.
+- Rows are read defensively (`dncRows` / `dncField`): a bare array or `data`/`results`/
+  `records`, with fields on the row or under a JSON:API `attributes` object, in hyphen, snake
+  or camel spelling.
 
 ## API keys
 

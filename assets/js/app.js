@@ -16,7 +16,8 @@
      not the Do Not Call Registry itself, which has no public API. */
   var DNC_DEMO_KEY = 'jkzgzmORpKYNKiqMNcBeYUPess4APxhKUMbeWXFA';
   var DNC_PATH     = 'api.ftc.gov/v0/dnc-complaints';
-  var DNC_PAGE     = 50;
+  var DNC_PAGE     = 50;      // the endpoint caps a response at 50 records
+  var DNC_WINDOW_DAYS = 30;
 
   var LS_KEY     = 'nv.apikey';
   var LS_DNC_KEY = 'nv.dnckey';
@@ -96,6 +97,12 @@
   function dncKey() {
     var custom = readLS(LS_DNC_KEY, '');
     return (typeof custom === 'string' && custom.length >= 16) ? custom : DNC_DEMO_KEY;
+  }
+
+  function snippet(text, max) {
+    var s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    max = max || 180;
+    return s.length > max ? s.slice(0, max) + '…' : s;
   }
 
   function toast(message) {
@@ -186,14 +193,21 @@
     var opts = { method: 'GET', mode: 'cors', cache: 'no-store' };
     if (ctrl) opts.signal = ctrl.signal;
 
+    var status = 0;
     return fetch(url, opts)
-      .then(function (res) { return res.text(); })
+      .then(function (res) { status = res.status; return res.text(); })
       .then(function (text) {
         clearTimeout(timer);
         var data;
         try { data = JSON.parse(text); }
-        catch (e) { throw new Error('The validation service returned an unreadable response.'); }
-        if (!data || typeof data !== 'object') throw new Error('The validation service returned an empty response.');
+        catch (e) {
+          // Carry the status and a slice of the body: an opaque "unreadable
+          // response" tells nobody whether this was a 404, an HTML error page
+          // or a relay failure.
+          throw new Error('HTTP ' + status + ' — response was not JSON: ' + snippet(text));
+        }
+        if (!data || typeof data !== 'object') throw new Error('HTTP ' + status + ' — empty response.');
+        data.__status = status;
         return data;
       })
       .catch(function (err) {
@@ -205,6 +219,7 @@
   function apiError(code, error) {
     var err = new Error(API_ERRORS[code] || (error && error.info) || 'The validation service rejected the request.');
     err.code = code;
+    err.__api = true;
     // An invalid key, an inactive account or an exhausted quota fails the same
     // way on every transport, so there is no point retrying those.
     err.__fatal = (code === 101 || code === 102 || code === 104);
@@ -217,6 +232,15 @@
      direct call must stay on HTTPS. `interpret` turns a parsed body into a
      result or throws; an error marked __fatal ends the chain immediately,
      since it would fail the same way on every transport. */
+  /* Keep the most informative failure: a real answer from the API beats a
+     later relay timeout, which would otherwise overwrite it and leave the user
+     with a generic connection message. */
+  function keepError(prev, next) {
+    if (!prev) return next;
+    if (next && next.__api && !prev.__api) return next;
+    return prev;
+  }
+
   function runTransports(directUrl, relayUrl, interpret) {
     var lastError = null;
 
@@ -235,7 +259,7 @@
         })
         .catch(function (err) {
           if (err && err.__fatal) throw err;
-          lastError = err;
+          lastError = keepError(lastError, err);
           return attempt(i + 1);
         });
     }
@@ -454,42 +478,103 @@
     };
   }
 
-  function interpretDnc(data) {
-    // api.data.gov rejects bad keys and throttling with {"error":{code,message}}.
-    if (data && data.error && (data.error.code || data.error.message)) {
-      var code = String(data.error.code || '');
-      var err = new Error(String(data.error.message || 'The FTC API rejected the request.'));
-      err.__fatal = /API_KEY|OVER_RATE_LIMIT/i.test(code);
-      throw err;
+  /* Pull a human message out of whichever error envelope came back:
+     api.data.gov uses {"error":{code,message}}, while the FTC's JSON:API layer
+     uses {"errors":[{status,title,detail}]}. Missing this second shape is what
+     made a plain 400 surface as "unexpected payload". */
+  function dncError(data) {
+    if (!data || typeof data !== 'object') return null;
+
+    if (Array.isArray(data.errors) && data.errors.length) {
+      var first = data.errors[0] || {};
+      var text = first.detail || first.title || first.message || 'The FTC API rejected the request.';
+      var e = new Error(String(text));
+      e.__api = true;
+      e.__fatal = String(first.status || '') === '403';
+      return e;
     }
+    if (data.error) {
+      var code = String(data.error.code || '');
+      var msg = typeof data.error === 'string'
+        ? data.error
+        : String(data.error.message || data.error.detail || 'The FTC API rejected the request.');
+      var err = new Error(msg);
+      err.__api = true;
+      err.__fatal = /API_KEY|OVER_RATE_LIMIT/i.test(code);
+      return err;
+    }
+    return null;
+  }
+
+  function interpretDnc(data) {
+    var err = dncError(data);
+    if (err) throw err;
     var rows = dncRows(data);
-    if (!rows) throw new Error('The FTC complaint API returned an unexpected payload.');
+    if (!rows) {
+      throw new Error('HTTP ' + (data.__status || '?') + ' — no complaint records in the response: ' +
+                      snippet(JSON.stringify(data)));
+    }
     return { rows: rows, raw: data };
+  }
+
+  function isoDay(d) { return new Date(d).toISOString().slice(0, 10); }
+
+  /* The API has no filter for the number that placed the call — company-phone-
+     number is a response field only. The documented filters are the created
+     date, state, area_code and is_robocall, so the closest we can get is to
+     pull a recent window of complaints for the number's own area code and look
+     for it among them. Each entry is a fallback for the one before it, so an
+     unsupported parameter degrades the scope instead of failing the lookup. */
+  function dncQueries(digits) {
+    var area = digits.slice(0, 3);
+    var now = Date.now();
+    var from = isoDay(now - DNC_WINDOW_DAYS * 864e5);
+    var to = isoDay(now);
+    return [
+      { params: { area_code: area, created_date_from: from, created_date_to: to },
+        scope: 'area code ' + area + ', ' + from + ' to ' + to },
+      { params: { area_code: area },
+        scope: 'area code ' + area + ', most recent complaints' },
+      { params: {},
+        scope: 'most recent complaints nationwide' }
+    ];
   }
 
   function dncLookup(raw) {
     var digits = usDigits(raw);
-    var qs = new URLSearchParams({
-      api_key: dncKey(),
-      company_phone_number: digits,
-      items_per_page: String(DNC_PAGE)
-    }).toString();
-    var url = 'https://' + DNC_PATH + '?' + qs;
+    var queries = dncQueries(digits);
+    var lastError = null;
 
-    return runTransports(url, url, interpretDnc).then(function (res) {
-      var all = res.rows.map(normaliseComplaint);
-      // Confirm the server actually applied the phone filter. If it ignored the
-      // parameter we would otherwise present unrelated complaints as this
-      // number's, so keep only rows that really match and say what happened.
-      var rows = all.filter(function (c) { return c.phone === digits; });
-      return {
-        number: digits,
-        rows: rows,
-        unfiltered: all.length > 0 && rows.length === 0,
-        raw: res.raw,
-        __secure: res.__secure
-      };
-    });
+    function attempt(i) {
+      if (i >= queries.length) {
+        return Promise.reject(lastError || new Error('Could not reach the FTC complaint API.'));
+      }
+      var q = queries[i];
+      var params = { api_key: dncKey(), items_per_page: String(DNC_PAGE) };
+      Object.keys(q.params).forEach(function (k) { params[k] = q.params[k]; });
+      var url = 'https://' + DNC_PATH + '?' + new URLSearchParams(params).toString();
+
+      return runTransports(url, url, interpretDnc)
+        .then(function (res) {
+          var scanned = res.rows.map(normaliseComplaint);
+          return {
+            number: digits,
+            areaCode: digits.slice(0, 3),
+            scope: q.scope,
+            scanned: scanned,
+            matches: scanned.filter(function (c) { return c.phone === digits; }),
+            raw: res.raw,
+            __secure: res.__secure
+          };
+        })
+        .catch(function (err) {
+          if (err && err.__fatal) throw err;
+          lastError = keepError(lastError, err);
+          return attempt(i + 1);
+        });
+    }
+
+    return attempt(0);
   }
 
   function dncSummary(rows) {
@@ -515,19 +600,23 @@
   }
 
   function renderDnc(result) {
-    var rows = result.rows.slice().sort(function (a, b) { return b.time - a.time; });
-    var s = dncSummary(rows);
+    var matches = result.matches.slice().sort(function (a, b) { return b.time - a.time; });
+    var scanned = result.scanned.slice().sort(function (a, b) { return b.time - a.time; });
+    var s = dncSummary(scanned);
+    var hit = matches.length > 0;
     var pretty = result.number.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
 
-    var tone = s.count === 0 ? 'ok' : (s.count >= 5 ? 'bad' : 'warn');
-    var verdict = s.count === 0
-      ? 'No FTC complaints on file'
-      : s.count + (s.count === 1 ? ' complaint filed' : ' complaints filed');
+    /* A hit is meaningful; a miss is not a clean bill of health, because this
+       sample is only a slice of the complaint stream. The wording has to carry
+       that difference. */
+    var verdict = hit
+      ? 'Reported ' + matches.length + (matches.length === 1 ? ' time' : ' times') + ' in this sample'
+      : 'Not found in this sample';
 
     var head =
       '<div class="result-head">' +
-        '<span class="verdict ' + tone + '">' +
-          (s.count === 0 ? ICONS.check : ICONS.alert) + esc(verdict) +
+        '<span class="verdict ' + (hit ? 'bad' : 'warn') + '">' +
+          (hit ? ICONS.alert : ICONS.check) + esc(verdict) +
         '</span>' +
         '<span class="result-number">' +
           '<span class="result-flag" aria-hidden="true">🇺🇸</span>' +
@@ -536,18 +625,21 @@
       '</div>';
 
     var grid = '<div class="result-grid">' +
-      cell(ICONS.alert, 'Complaints', String(s.count)) +
-      cell(ICONS.hash, 'Most recent', s.latest) +
-      cell(ICONS.line, 'Robocalls', s.count ? s.robocalls + ' of ' + s.count : '') +
-      cell(ICONS.globe, 'Reported from', s.states) +
-      cell(ICONS.carrier, 'Top subject', s.topSubject) +
-      cell(ICONS.pin, 'Sample size', 'Latest ' + DNC_PAGE + ' complaints') +
+      cell(ICONS.alert, 'This number', hit ? matches.length + ' complaint' + (matches.length === 1 ? '' : 's') : 'No match') +
+      cell(ICONS.hash, 'Complaints scanned', String(scanned.length)) +
+      cell(ICONS.line, 'Robocalls in sample', scanned.length ? s.robocalls + ' of ' + scanned.length : '') +
+      cell(ICONS.globe, 'Sample scope', result.scope) +
+      cell(ICONS.carrier, 'Top subject in sample', s.topSubject) +
+      cell(ICONS.pin, 'Most recent in sample', s.latest) +
     '</div>';
 
+    var rows = hit ? matches : scanned;
     var list = '';
     if (rows.length) {
       list = '<div class="complaints">' +
-        '<h3 class="complaints-head">Recent complaints</h3>' +
+        '<h3 class="complaints-head">' +
+          (hit ? 'Complaints naming this number' : 'Recent complaints in this sample') +
+        '</h3>' +
         '<ul class="complaint-list">' +
           rows.slice(0, 10).map(function (c) {
             return '<li class="complaint">' +
@@ -561,11 +653,13 @@
       '</div>';
     }
 
-    var warn = result.unfiltered
-      ? '<div class="result-foot warn-foot">' + ICONS.alert +
-        '<span class="micro">The API returned complaints but none carried this number, so the phone filter may not have applied. Check the raw JSON before trusting this result.</span>' +
-        '</div>'
-      : '';
+    var caveat = '<div class="result-foot warn-foot">' + ICONS.alert +
+      '<span class="micro">' + (hit
+        ? 'The FTC API cannot be filtered by the calling number, so this only searched ' + esc(result.scope) +
+          ' (' + scanned.length + ' records). The true total is likely higher.'
+        : 'The FTC API cannot be filtered by the calling number, so this only searched ' + esc(result.scope) +
+          ' (' + scanned.length + ' records). A miss here does <strong>not</strong> mean the number is clean.') +
+      '</span></div>';
 
     var foot =
       '<div class="result-foot">' +
@@ -574,9 +668,9 @@
           ' This is <strong>not</strong> a Do Not Call Registry scrub.</span>' +
         '<button type="button" class="link-btn raw-toggle" data-raw>Show raw JSON</button>' +
       '</div>' +
-      '<pre class="raw-json" hidden>' + esc(JSON.stringify(result.raw, null, 2)) + '</pre>';
+      '<pre class="raw-json" hidden>' + esc(JSON.stringify(stripInternal(result.raw), null, 2)) + '</pre>';
 
-    resultRegion.innerHTML = '<div class="result-card">' + head + grid + list + warn + foot + '</div>';
+    resultRegion.innerHTML = '<div class="result-card">' + head + grid + list + caveat + foot + '</div>';
   }
 
   // ---------------------------------------------------------
@@ -656,7 +750,7 @@
       label: 'Check DNC',
       busyLabel: 'Checking',
       placeholder: '2025550123',
-      hint: 'US numbers only — enter 10 digits. Searches FTC consumer complaints filed against this number; it does <strong>not</strong> check the Do Not Call Registry.'
+      hint: 'US numbers only — enter 10 digits. Scans a recent sample of FTC complaints from this number\u2019s area code and reports whether it appears. The API cannot be filtered by caller, and this is <strong>not</strong> a Do Not Call Registry check.'
     }
   };
   var mode = 'validate';
