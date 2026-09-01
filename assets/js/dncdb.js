@@ -65,7 +65,13 @@
         var t = db.transaction(STORE, mode);
         var store = t.objectStore(STORE);
         var out = fn(store);
-        t.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
+        t.oncomplete = function () {
+          // Unwrap the IDBRequest by its shape, not by whether `result` is set:
+          // a miss has result === undefined, and returning the request itself
+          // there would hand callers a truthy object for a row that is absent.
+          var isRequest = out && typeof out === 'object' && 'result' in out;
+          resolve(isRequest ? out.result : out);
+        };
         t.onerror = function () { reject(t.error); };
         t.onabort = function () { reject(t.error || new Error('transaction aborted')); };
       });

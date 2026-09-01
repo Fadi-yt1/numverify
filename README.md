@@ -48,7 +48,7 @@ The site is then served at `https://<owner>.github.io/<repo>/`.
 
 ## DNC complaint check — what it is, and what it is not
 
-The **DNC complaints (US)** tab queries the FTC's Do Not Call *complaint* dataset through
+The **DNC checker page** (`dnc.html`) queries the FTC's Do Not Call *complaint* dataset through
 [api.data.gov](https://api.data.gov) (`api.ftc.gov/v0/dnc-complaints`).
 
 Two limits shape what this feature can honestly do, and both are worth understanding before

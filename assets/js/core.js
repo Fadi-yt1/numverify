@@ -472,13 +472,13 @@
   // ---------------------------------------------------------
   // Exports
   // ---------------------------------------------------------
+  /* Only what the pages actually consume; the rest stays internal. */
   window.NV = {
-    $: $, $$: $$, esc: esc, flagFor: flagFor, snippet: snippet, toast: toast,
-    readLS: readLS, writeLS: writeLS, apiKey: apiKey, dncKey: dncKey,
-    fetchJson: fetchJson, runTransports: runTransports, keepError: keepError,
+    $: $, $$: $$, esc: esc, flagFor: flagFor, toast: toast,
+    readLS: readLS, writeLS: writeLS, apiKey: apiKey,
+    runTransports: runTransports,
     ICONS: ICONS, cell: cell, stripInternal: stripInternal, renderNotice: renderNotice,
     usDigits: usDigits, dncLookup: dncLookup, dncSummary: dncSummary,
-    DNC_PAGE: DNC_PAGE, DNC_WINDOW_DAYS: DNC_WINDOW_DAYS,
     initTheme: initTheme, initKeyDialog: initKeyDialog
   };
 })();

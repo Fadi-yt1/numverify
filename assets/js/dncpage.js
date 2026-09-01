@@ -303,14 +303,27 @@
   dbSearch.addEventListener('input', renderDb);
   dbFilter.addEventListener('change', renderDb);
 
+  function sortBy(th) {
+    var key = th.getAttribute('data-sort');
+    if (sortKey === key) sortDir = -sortDir;
+    else { sortKey = key; sortDir = (key === 'number' || key === 'lastSubject') ? 1 : -1; }
+    $$('.db-table th[data-sort]').forEach(function (o) {
+      o.removeAttribute('data-dir');
+      o.removeAttribute('aria-sort');
+    });
+    th.setAttribute('data-dir', sortDir === 1 ? 'asc' : 'desc');
+    th.setAttribute('aria-sort', sortDir === 1 ? 'ascending' : 'descending');
+    renderDb();
+  }
+
   $$('.db-table th[data-sort]').forEach(function (th) {
-    th.addEventListener('click', function () {
-      var key = th.getAttribute('data-sort');
-      if (sortKey === key) sortDir = -sortDir;
-      else { sortKey = key; sortDir = (key === 'number' || key === 'lastSubject') ? 1 : -1; }
-      $$('.db-table th[data-sort]').forEach(function (o) { o.removeAttribute('data-dir'); });
-      th.setAttribute('data-dir', sortDir === 1 ? 'asc' : 'desc');
-      renderDb();
+    th.addEventListener('click', function () { sortBy(th); });
+    // The headers are focusable, so they have to answer the keyboard too.
+    th.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        sortBy(th);
+      }
     });
   });
 
