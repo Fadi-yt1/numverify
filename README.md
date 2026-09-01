@@ -15,11 +15,18 @@ served directly from GitHub Pages.
 | **Line type detection** | `mobile`, `landline`, `voip`, `toll_free`, `premium_rate`, `satellite`, `paging`, `special_services` |
 | **Country detection** | Country name, ISO country code and dialling prefix |
 | **Location detection** | Region/state/city where the numbering plan publishes it |
-| **DNC complaint check (US)** | How often a US number has been reported to the FTC for unwanted calls |
+| **DNC complaint check (US)** | Whether a US number appears in recent FTC unwanted-call complaints — on its own page, `dnc.html` |
 
 Plus: 237-country picker with dial codes, E.164 copy button, raw JSON view, recent-lookup
 history in `localStorage`, light/dark theme, deep links (`?number=+14158586273`) and a
 bring-your-own-API-key setting.
+
+Two pages:
+
+| Page | What it does |
+|---|---|
+| `index.html` | Worldwide number validation via numverify |
+| `dnc.html` | US DNC complaint checker, plus a browser-local database of every number checked |
 
 ## Running locally
 
@@ -72,6 +79,27 @@ That asymmetry matters and the UI states it plainly:
 - **A miss is weak evidence.** It means "absent from this sample", not "clean". The FTC
   receives hundreds of thousands of complaints a month nationwide; 50 records from one area
   code over 30 days is a thin slice.
+
+### The number database
+
+`dnc.html` keeps every check in a database in the visitor's own browser — **IndexedDB**, with a
+`localStorage` fallback for private windows and older browsers. The page names the engine
+actually in use in its stats row.
+
+Each row holds the number, whether it was found, the hit count, the sample scope, the most
+recent complaint and its subject, when it was checked, plus a free-text note and a flag you
+set yourself. The table supports search (number, subject, note), filtering (found / not found
+/ flagged), column sorting, per-row re-check, delete, CSV and JSON export, and JSON import.
+A re-check updates the result while preserving your note and flag.
+
+This is per-browser storage, so be clear about what it is not: it is not shared between
+browsers, devices or people, and clearing the site's data deletes it. Export is the way to
+move a list anywhere else. If you need a list several people share, that needs a real backend
+— a Cloudflare Worker, Supabase or similar — which this static site deliberately does not have.
+
+Bulk checking runs numbers sequentially rather than in parallel, and de-duplicates the input,
+because the shared api.data.gov key is rate limited and a burst is the fastest way to exhaust
+it.
 
 Implementation notes:
 
@@ -132,12 +160,19 @@ exhausted `104`) short-circuit the chain and are reported straight away.
 ## Project layout
 
 ```
-index.html               markup for the whole page
-assets/css/styles.css    theming, layout, components
+index.html               number validator page
+dnc.html                 DNC complaint checker + database page
+assets/css/styles.css    theming, layout, components (shared by both pages)
+assets/js/core.js        shared: helpers, transport chain, FTC client, theme, key dialog
 assets/js/countries.js   237 countries: ISO code, dial code, name
-assets/js/app.js         transport chain, numverify + FTC clients, rendering, history
+assets/js/app.js         index page: numverify client, result card, lookup history
+assets/js/dncdb.js       IndexedDB store (localStorage fallback) for checked numbers
+assets/js/dncpage.js     DNC page: lookups, bulk checks, database table, import/export
 .github/workflows/       GitHub Pages deployment
 ```
+
+`core.js` loads first on both pages and exposes `window.NV`; `dncdb.js` exposes
+`window.NV_DNCDB`. Nothing else is global.
 
 ## Notes
 

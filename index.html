@@ -32,6 +32,7 @@
 
     <nav class="site-nav" aria-label="Primary">
       <a href="#validator">Validator</a>
+      <a href="dnc.html">DNC checker</a>
       <a href="#features">Features</a>
       <a href="#coverage">Coverage</a>
       <a href="#faq">FAQ</a>
@@ -63,11 +64,6 @@
       </div>
 
       <form class="lookup-card" id="lookupForm" novalidate>
-        <div class="mode-tabs" role="tablist" aria-label="Lookup type">
-          <button type="button" class="mode-tab is-active" data-mode="validate" role="tab" aria-selected="true">Validate number</button>
-          <button type="button" class="mode-tab" data-mode="dnc" role="tab" aria-selected="false">DNC complaints (US)</button>
-        </div>
-
         <div class="lookup-row">
           <div class="field field-country">
             <label for="countrySelect">Country</label>
@@ -182,7 +178,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </span>
           <h3>DNC Complaint Check <em>US</em></h3>
-          <p>Scan a recent sample of FTC unwanted-call complaints from a US number’s area code and see whether that number turns up in them, alongside the robocall share and what the calls were about.</p>
+          <p>Scan a recent sample of FTC unwanted-call complaints from a US number’s area code and see whether that number turns up in them. Runs on its own page, with a local database of every number you check — <a href="dnc.html">open the DNC checker</a>.</p>
         </article>
       </div>
     </div>
@@ -252,12 +248,7 @@
             <a href="https://telemarketing.donotcall.gov" target="_blank" rel="noopener noreferrer">telemarketing.donotcall.gov</a>
             for an Organization ID and SAN and downloading per-area-code lists; consumers check their own number at
             <a href="https://www.donotcall.gov" target="_blank" rel="noopener noreferrer">donotcall.gov</a>.
-            What this site queries is a different FTC dataset: consumer <em>complaints</em> about unwanted calls. Second, even that dataset cannot be filtered by the number that placed the call — the FTC API filters on date, state, area code and robocall flag only, and the caller's number comes back as a field rather than a search key. So the check pulls a recent sample of complaints from the number's own area code and tells you whether it appears among them.</p>
-        </details>
-
-        <details>
-          <summary>What does “not found in this sample” mean?</summary>
-          <p>Exactly that, and no more. The sample is at most 50 complaints from the number's area code over the last 30 days — a slice of a stream that runs to hundreds of thousands of complaints a month nationwide. A number can be a heavy robocaller and still be absent from that slice. A <em>hit</em> is a strong signal; a miss is weak evidence, not a clean bill of health.</p>
+            The <a href="dnc.html">DNC checker</a> queries a different FTC dataset: consumer <em>complaints</em> about unwanted calls. Its own page explains the limits in full.</p>
         </details>
 
         <details>
@@ -285,6 +276,7 @@
       <p class="micro">Global phone number validation &amp; lookup. Powered by the numverify API.</p>
     </div>
     <div class="footer-links">
+      <a href="dnc.html">DNC checker</a>
       <button type="button" class="link-btn" id="openKeyDialog2">API key settings</button>
       <a href="https://numverify.com/documentation" target="_blank" rel="noopener noreferrer">API documentation</a>
     </div>
@@ -314,6 +306,7 @@
   </form>
 </dialog>
 
+<script src="assets/js/core.js"></script>
 <script src="assets/js/countries.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
