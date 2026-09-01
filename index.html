@@ -63,6 +63,11 @@
       </div>
 
       <form class="lookup-card" id="lookupForm" novalidate>
+        <div class="mode-tabs" role="tablist" aria-label="Lookup type">
+          <button type="button" class="mode-tab is-active" data-mode="validate" role="tab" aria-selected="true">Validate number</button>
+          <button type="button" class="mode-tab" data-mode="dnc" role="tab" aria-selected="false">DNC complaints (US)</button>
+        </div>
+
         <div class="lookup-row">
           <div class="field field-country">
             <label for="countrySelect">Country</label>
@@ -171,6 +176,14 @@
           <h3>Location Detection</h3>
           <p>Narrow the number down to a region, state or city where the numbering plan exposes it — useful for routing, fraud scoring and support triage.</p>
         </article>
+
+        <article class="feature">
+          <span class="feat-icon i-shield" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </span>
+          <h3>DNC Complaint Check <em>US</em></h3>
+          <p>See how often a US number has been reported to the FTC for unwanted calls — complaint count, how recent, how many were robocalls, and what callers said it was about.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -234,6 +247,20 @@
           <p>Coverage depends on what each country's numbering plan publishes. Landlines in many countries expose a region but no carrier; some mobile ranges expose a carrier but no city. An empty field means “not published”, not “invalid”.</p>
         </details>
         <details>
+          <summary>Does the DNC check tell me if a number is on the Do Not Call Registry?</summary>
+          <p><strong>No.</strong> The National Do Not Call Registry — the list of consumers who opted out of telemarketing — has no public API. Telemarketers reach it by registering at
+            <a href="https://telemarketing.donotcall.gov" target="_blank" rel="noopener noreferrer">telemarketing.donotcall.gov</a>
+            for an Organization ID and SAN and downloading per-area-code lists; consumers check their own number at
+            <a href="https://www.donotcall.gov" target="_blank" rel="noopener noreferrer">donotcall.gov</a>.
+            What this site queries is a different FTC dataset: consumer <em>complaints</em> about unwanted calls. It answers “has this number been reported for robocalls”, not “is this number registered”.</p>
+        </details>
+
+        <details>
+          <summary>Can I use the DNC check for telemarketing compliance?</summary>
+          <p>No — it is not a substitute for scrubbing against the registry, and using it that way would leave you exposed. Complaint data is a reputation signal: useful for spotting known robocallers, screening inbound calls, or checking what a number is already associated with. Lawful outbound calling still requires a registry subscription.</p>
+        </details>
+
+        <details>
           <summary>Is my data stored?</summary>
           <p>This site has no backend. Lookups go straight from your browser to the validation API, and your recent-lookup history lives only in your own browser's local storage. Clearing it removes it for good.</p>
         </details>
@@ -267,13 +294,17 @@
     <p class="micro">Optional. The site ships with a shared demo key that may hit its monthly quota. Paste your own
       <a href="https://numverify.com/product" target="_blank" rel="noopener noreferrer">numverify access key</a>
       to use your own allowance. It is stored in this browser only.</p>
-    <label for="keyInput">Access key</label>
+    <label for="keyInput">numverify access key</label>
     <input id="keyInput" type="text" spellcheck="false" autocomplete="off" placeholder="your 32-character access key">
+    <label for="dncKeyInput">api.data.gov key <span class="micro">(FTC complaint data)</span></label>
+    <input id="dncKeyInput" type="text" spellcheck="false" autocomplete="off" placeholder="your 40-character api.data.gov key">
     <div class="dialog-actions">
       <button type="button" class="btn-ghost" id="keyReset">Use demo key</button>
       <span class="spacer"></span>
       <button type="button" class="btn-ghost" id="keyCancel">Cancel</button>
-      <button type="button" class="btn-primary btn-sm" id="keySave">Save</button>
+      <!-- A real submit button so Enter still saves: a form with more than one
+           field gets no implicit submission without one. -->
+      <button type="submit" class="btn-primary btn-sm" id="keySave">Save</button>
     </div>
   </form>
 </dialog>

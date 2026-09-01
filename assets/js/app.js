@@ -10,7 +10,16 @@
   // ---------------------------------------------------------
   var DEMO_KEY   = 'c2ebb50af59ed2f763aeb27b5ad21d5b';
   var API_PATH   = 'apilayer.net/api/validate';
+
+  /* FTC Do Not Call complaint data, served through api.data.gov. This is the
+     complaints dataset — numbers the public has REPORTED for unwanted calls —
+     not the Do Not Call Registry itself, which has no public API. */
+  var DNC_DEMO_KEY = 'jkzgzmORpKYNKiqMNcBeYUPess4APxhKUMbeWXFA';
+  var DNC_PATH     = 'api.ftc.gov/v0/dnc-complaints';
+  var DNC_PAGE     = 50;
+
   var LS_KEY     = 'nv.apikey';
+  var LS_DNC_KEY = 'nv.dnckey';
   var LS_HISTORY = 'nv.history';
   var LS_THEME   = 'nv.theme';
   var LS_COUNTRY = 'nv.country';
@@ -23,14 +32,10 @@
      endpoint first, and only if it is unavailable relay the request through a
      public HTTPS relay that can reach the plain-HTTP endpoint. */
   var TRANSPORTS = [
-    { name: 'direct-https', direct: true,
-      build: function (qs) { return 'https://' + API_PATH + '?' + qs; } },
-    { name: 'relay-allorigins',
-      build: function (qs) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent('http://' + API_PATH + '?' + qs); } },
-    { name: 'relay-codetabs',
-      build: function (qs) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent('http://' + API_PATH + '?' + qs); } },
-    { name: 'relay-corsproxy',
-      build: function (qs) { return 'https://corsproxy.io/?url=' + encodeURIComponent('http://' + API_PATH + '?' + qs); } }
+    { name: 'direct', direct: true, wrap: function (url) { return url; } },
+    { name: 'relay-allorigins', wrap: function (url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
+    { name: 'relay-codetabs',   wrap: function (url) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url); } },
+    { name: 'relay-corsproxy',  wrap: function (url) { return 'https://corsproxy.io/?url=' + encodeURIComponent(url); } }
   ];
 
   var LINE_TYPES = {
@@ -88,6 +93,11 @@
     return (typeof custom === 'string' && custom.length >= 16) ? custom : DEMO_KEY;
   }
 
+  function dncKey() {
+    var custom = readLS(LS_DNC_KEY, '');
+    return (typeof custom === 'string' && custom.length >= 16) ? custom : DNC_DEMO_KEY;
+  }
+
   function toast(message) {
     var el = document.createElement('div');
     el.className = 'toast';
@@ -127,7 +137,7 @@
     var c = selectedCountry();
     var typed = numberInput ? numberInput.value.trim() : '';
     var ownPrefix = typed.charAt(0) === '+' || typed.slice(0, 2) === '00';
-    dialPrefix.hidden = ownPrefix;
+    dialPrefix.hidden = ownPrefix || mode === 'dnc';   // DNC takes bare US digits
     dialPrefix.textContent = c ? '+' + c.dial : '+';
     writeLS(LS_COUNTRY, countrySelect.value || '');
   }
@@ -201,29 +211,27 @@
     return err;
   }
 
-  /* Walk the transport chain until one produces a usable answer.
-     Error 105 (encrypted endpoint not on this plan) is the signal to fall back. */
-  function lookup(raw) {
-    var built = buildQuery(raw);
+  /* Walk the transport chain until one produces a usable answer. The first
+     transport fetches `directUrl` as-is; every relay wraps `relayUrl` instead,
+     because numverify's free plan needs its plain-HTTP URL there while the
+     direct call must stay on HTTPS. `interpret` turns a parsed body into a
+     result or throws; an error marked __fatal ends the chain immediately,
+     since it would fail the same way on every transport. */
+  function runTransports(directUrl, relayUrl, interpret) {
     var lastError = null;
 
     function attempt(i) {
       if (i >= TRANSPORTS.length) {
-        return Promise.reject(lastError || new Error('Could not reach the validation service.'));
+        return Promise.reject(lastError || new Error('Could not reach the service.'));
       }
       var t = TRANSPORTS[i];
 
-      return fetchJson(t.build(built.qs))
+      return fetchJson(t.direct ? directUrl : t.wrap(relayUrl))
         .then(function (data) {
-          if (data.success === false && data.error) {
-            throw apiError(Number(data.error.code), data.error);
-          }
-          if (typeof data.valid === 'undefined') {
-            throw new Error('The validation service returned an unexpected payload.');
-          }
-          data.__transport = t.name;
-          data.__secure = !!t.direct;
-          return data;
+          var result = interpret(data);
+          result.__transport = t.name;
+          result.__secure = !!t.direct;
+          return result;
         })
         .catch(function (err) {
           if (err && err.__fatal) throw err;
@@ -233,6 +241,25 @@
     }
 
     return attempt(0);
+  }
+
+  /* numverify. Error 105 (encrypted endpoint not on this plan) is not fatal —
+     it is exactly the case the relays exist to cover. */
+  function interpretNumverify(data) {
+    if (data.success === false && data.error) {
+      throw apiError(Number(data.error.code), data.error);
+    }
+    if (typeof data.valid === 'undefined') {
+      throw new Error('The validation service returned an unexpected payload.');
+    }
+    return data;
+  }
+
+  function lookup(raw) {
+    var qs = buildQuery(raw).qs;
+    return runTransports('https://' + API_PATH + '?' + qs,
+                         'http://' + API_PATH + '?' + qs,
+                         interpretNumverify);
   }
 
   // ---------------------------------------------------------
@@ -362,6 +389,197 @@
   });
 
   // ---------------------------------------------------------
+  // DNC complaint check (FTC / api.data.gov)
+  // ---------------------------------------------------------
+
+  /* Reduce anything the user typed to the 10 NANP digits, dropping a leading
+     country code. Returns '' when the input cannot be a US number. */
+  function usDigits(raw) {
+    var d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+    return d.length === 10 ? d : '';
+  }
+
+  /* The exact JSON shape of the FTC endpoint is not pinned down here, so read
+     it defensively: rows may arrive as a bare array, or under data/results/
+     records, and each row's fields may sit directly on the row or under a
+     JSON:API `attributes` object. */
+  function dncRows(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.data)) return data.data;
+    if (data && Array.isArray(data.results)) return data.results;
+    if (data && Array.isArray(data.records)) return data.records;
+    return null;
+  }
+
+  /* Field names differ between hyphenated, snake and camel spellings across FTC
+     datasets, so match on letters and digits alone. */
+  function dncField(row, names) {
+    var src = (row && typeof row.attributes === 'object' && row.attributes) ? row.attributes : row;
+    if (!src || typeof src !== 'object') return '';
+    var keys = Object.keys(src);
+    var norm = function (s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    for (var i = 0; i < names.length; i++) {
+      var want = norm(names[i]);
+      for (var j = 0; j < keys.length; j++) {
+        if (norm(keys[j]) === want && src[keys[j]] != null && src[keys[j]] !== '') return src[keys[j]];
+      }
+    }
+    return '';
+  }
+
+  function dncDate(value) {
+    if (!value) return { label: '', time: 0 };
+    var str = String(value);
+    var t = Date.parse(str);
+    if (isNaN(t)) {
+      var us = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);   // MM/DD/YYYY
+      if (us) t = Date.parse(us[3] + '-' + ('0' + us[1]).slice(-2) + '-' + ('0' + us[2]).slice(-2));
+    }
+    if (isNaN(t)) return { label: str, time: 0 };
+    return { label: new Date(t).toISOString().slice(0, 10), time: t };
+  }
+
+  function normaliseComplaint(row) {
+    var date = dncDate(dncField(row, ['created-date', 'date-received', 'violation-date', 'created', 'date']));
+    var robo = String(dncField(row, ['recorded-message-or-robocall', 'robocall', 'recorded-message'])).toLowerCase();
+    return {
+      phone:   String(dncField(row, ['company-phone-number', 'phone-number', 'caller-id-number', 'phone'])).replace(/\D/g, ''),
+      date:    date.label,
+      time:    date.time,
+      subject: String(dncField(row, ['subject', 'topic', 'complaint-subject']) || ''),
+      city:    String(dncField(row, ['consumer-city', 'city']) || ''),
+      state:   String(dncField(row, ['consumer-state', 'state']) || ''),
+      robocall: robo === 'y' || robo === 'yes' || robo === 'true' || robo === '1'
+    };
+  }
+
+  function interpretDnc(data) {
+    // api.data.gov rejects bad keys and throttling with {"error":{code,message}}.
+    if (data && data.error && (data.error.code || data.error.message)) {
+      var code = String(data.error.code || '');
+      var err = new Error(String(data.error.message || 'The FTC API rejected the request.'));
+      err.__fatal = /API_KEY|OVER_RATE_LIMIT/i.test(code);
+      throw err;
+    }
+    var rows = dncRows(data);
+    if (!rows) throw new Error('The FTC complaint API returned an unexpected payload.');
+    return { rows: rows, raw: data };
+  }
+
+  function dncLookup(raw) {
+    var digits = usDigits(raw);
+    var qs = new URLSearchParams({
+      api_key: dncKey(),
+      company_phone_number: digits,
+      items_per_page: String(DNC_PAGE)
+    }).toString();
+    var url = 'https://' + DNC_PATH + '?' + qs;
+
+    return runTransports(url, url, interpretDnc).then(function (res) {
+      var all = res.rows.map(normaliseComplaint);
+      // Confirm the server actually applied the phone filter. If it ignored the
+      // parameter we would otherwise present unrelated complaints as this
+      // number's, so keep only rows that really match and say what happened.
+      var rows = all.filter(function (c) { return c.phone === digits; });
+      return {
+        number: digits,
+        rows: rows,
+        unfiltered: all.length > 0 && rows.length === 0,
+        raw: res.raw,
+        __secure: res.__secure
+      };
+    });
+  }
+
+  function dncSummary(rows) {
+    var subjects = {}, states = {}, robo = 0, latest = 0, latestLabel = '';
+    rows.forEach(function (c) {
+      if (c.robocall) robo++;
+      if (c.subject) subjects[c.subject] = (subjects[c.subject] || 0) + 1;
+      if (c.state) states[c.state] = (states[c.state] || 0) + 1;
+      if (c.time > latest) { latest = c.time; latestLabel = c.date; }
+    });
+    var top = function (map, n) {
+      return Object.keys(map)
+        .sort(function (a, b) { return map[b] - map[a]; })
+        .slice(0, n);
+    };
+    return {
+      count: rows.length,
+      robocalls: robo,
+      latest: latestLabel || (rows.length ? rows[0].date : ''),
+      topSubject: top(subjects, 1)[0] || '',
+      states: top(states, 3).join(', ')
+    };
+  }
+
+  function renderDnc(result) {
+    var rows = result.rows.slice().sort(function (a, b) { return b.time - a.time; });
+    var s = dncSummary(rows);
+    var pretty = result.number.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+
+    var tone = s.count === 0 ? 'ok' : (s.count >= 5 ? 'bad' : 'warn');
+    var verdict = s.count === 0
+      ? 'No FTC complaints on file'
+      : s.count + (s.count === 1 ? ' complaint filed' : ' complaints filed');
+
+    var head =
+      '<div class="result-head">' +
+        '<span class="verdict ' + tone + '">' +
+          (s.count === 0 ? ICONS.check : ICONS.alert) + esc(verdict) +
+        '</span>' +
+        '<span class="result-number">' +
+          '<span class="result-flag" aria-hidden="true">🇺🇸</span>' +
+          '<span class="big">' + esc(pretty) + '</span>' +
+        '</span>' +
+      '</div>';
+
+    var grid = '<div class="result-grid">' +
+      cell(ICONS.alert, 'Complaints', String(s.count)) +
+      cell(ICONS.hash, 'Most recent', s.latest) +
+      cell(ICONS.line, 'Robocalls', s.count ? s.robocalls + ' of ' + s.count : '') +
+      cell(ICONS.globe, 'Reported from', s.states) +
+      cell(ICONS.carrier, 'Top subject', s.topSubject) +
+      cell(ICONS.pin, 'Sample size', 'Latest ' + DNC_PAGE + ' complaints') +
+    '</div>';
+
+    var list = '';
+    if (rows.length) {
+      list = '<div class="complaints">' +
+        '<h3 class="complaints-head">Recent complaints</h3>' +
+        '<ul class="complaint-list">' +
+          rows.slice(0, 10).map(function (c) {
+            return '<li class="complaint">' +
+              '<span class="c-date">' + esc(c.date || '—') + '</span>' +
+              '<span class="c-subject">' + esc(c.subject || 'No subject recorded') + '</span>' +
+              '<span class="c-where">' + esc([c.city, c.state].filter(Boolean).join(', ')) + '</span>' +
+              (c.robocall ? '<span class="badge voip">Robocall</span>' : '') +
+            '</li>';
+          }).join('') +
+        '</ul>' +
+      '</div>';
+    }
+
+    var warn = result.unfiltered
+      ? '<div class="result-foot warn-foot">' + ICONS.alert +
+        '<span class="micro">The API returned complaints but none carried this number, so the phone filter may not have applied. Check the raw JSON before trusting this result.</span>' +
+        '</div>'
+      : '';
+
+    var foot =
+      '<div class="result-foot">' +
+        '<span class="micro">FTC consumer complaint data · ' +
+          (result.__secure ? 'queried directly.' : 'queried via a relay.') +
+          ' This is <strong>not</strong> a Do Not Call Registry scrub.</span>' +
+        '<button type="button" class="link-btn raw-toggle" data-raw>Show raw JSON</button>' +
+      '</div>' +
+      '<pre class="raw-json" hidden>' + esc(JSON.stringify(result.raw, null, 2)) + '</pre>';
+
+    resultRegion.innerHTML = '<div class="result-card">' + head + grid + list + warn + foot + '</div>';
+  }
+
+  // ---------------------------------------------------------
   // History
   // ---------------------------------------------------------
   var historySection = $('#historySection');
@@ -425,50 +643,103 @@
     syncPrefix();
   }
 
+  /* Both modes share one input, one button and one result region; `mode` picks
+     which service the submit runs against. */
+  var MODES = {
+    validate: {
+      label: 'Validate',
+      busyLabel: 'Checking',
+      placeholder: '14158586273',
+      hint: 'Enter a number in international format (e.g. <code>+14158586273</code>), or pick a country and enter the local number.'
+    },
+    dnc: {
+      label: 'Check DNC',
+      busyLabel: 'Checking',
+      placeholder: '2025550123',
+      hint: 'US numbers only — enter 10 digits. Searches FTC consumer complaints filed against this number; it does <strong>not</strong> check the Do Not Call Registry.'
+    }
+  };
+  var mode = 'validate';
+
   function submit() {
     if (busy) return;
     var raw = numberInput.value.trim();
-    var n = normalise(raw);
+    var runner;
 
-    if (!n.digits) {
-      renderNotice('warn', 'Enter a phone number',
-        'Type a number in international format, or pick a country and enter the local number.');
-      numberInput.focus();
-      return;
-    }
-    if (n.digits.length < 4) {
-      renderNotice('warn', 'That number looks too short',
-        'A dialable number needs at least a country code and a subscriber number.');
-      numberInput.focus();
-      return;
+    if (mode === 'dnc') {
+      if (!usDigits(raw)) {
+        renderNotice('warn', 'Enter a 10-digit US number',
+          'FTC complaint data covers North American numbers only, for example 202 555 0123.');
+        numberInput.focus();
+        return;
+      }
+      runner = dncLookup(raw).then(renderDnc);
+    } else {
+      var n = normalise(raw);
+      if (!n.digits) {
+        renderNotice('warn', 'Enter a phone number',
+          'Type a number in international format, or pick a country and enter the local number.');
+        numberInput.focus();
+        return;
+      }
+      if (n.digits.length < 4) {
+        renderNotice('warn', 'That number looks too short',
+          'A dialable number needs at least a country code and a subscriber number.');
+        numberInput.focus();
+        return;
+      }
+      runner = lookup(raw).then(function (data) {
+        renderResult(data);
+        pushHistory(data);
+      });
     }
 
     busy = true;
     submitBtn.classList.add('is-loading');
     submitBtn.disabled = true;
-    $('.btn-label', submitBtn).textContent = 'Checking';
+    $('.btn-label', submitBtn).textContent = MODES[mode].busyLabel;
 
-    lookup(raw)
-      .then(function (data) {
-        renderResult(data);
-        pushHistory(data);
-      })
+    runner
       .catch(function (err) {
         var fatal = !!(err && err.__fatal);
         renderNotice('error',
           fatal ? 'The API key could not be used' : 'Lookup failed',
           (err && err.message ? err.message : 'Something went wrong.') +
           (fatal
-            ? ' Open “API key settings” to use your own numverify access key.'
+            ? ' Open “API key settings” to use your own access key.'
             : ' Please check your connection and try again.'));
       })
       .then(function () {
         busy = false;
         submitBtn.classList.remove('is-loading');
         submitBtn.disabled = false;
-        $('.btn-label', submitBtn).textContent = 'Validate';
+        $('.btn-label', submitBtn).textContent = MODES[mode].label;
       });
   }
+
+  function setMode(next) {
+    if (!MODES[next] || next === mode) return;
+    mode = next;
+    $$('.mode-tab').forEach(function (tab) {
+      var on = tab.getAttribute('data-mode') === mode;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    // DNC is US-only, so the country picker and the international samples have
+    // nothing to offer there.
+    $('.field-country').hidden = (mode === 'dnc');
+    $('.samples').hidden = (mode === 'dnc');
+    numberInput.placeholder = MODES[mode].placeholder;
+    $('#inputHint').innerHTML = MODES[mode].hint;
+    $('.btn-label', submitBtn).textContent = MODES[mode].label;
+    resultRegion.innerHTML = '';
+    toggleClear();
+    numberInput.focus();
+  }
+
+  $$('.mode-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () { setMode(tab.getAttribute('data-mode')); });
+  });
 
   numberInput.addEventListener('input', toggleClear);
 
@@ -492,6 +763,7 @@
   historyGrid.addEventListener('click', function (e) {
     var item = e.target.closest('.hist-item');
     if (!item) return;
+    setMode('validate');            // history only ever holds validation results
     countrySelect.value = '';
     syncPrefix();
     numberInput.value = '+' + item.getAttribute('data-number');
@@ -507,9 +779,13 @@
   var keyDialog = $('#keyDialog');
   var keyInput  = $('#keyInput');
 
+  var dncKeyInput = $('#dncKeyInput');
+
   function openKeyDialog() {
     var custom = readLS(LS_KEY, '');
+    var customDnc = readLS(LS_DNC_KEY, '');
     keyInput.value = typeof custom === 'string' ? custom : '';
+    dncKeyInput.value = typeof customDnc === 'string' ? customDnc : '';
     if (typeof keyDialog.showModal === 'function') keyDialog.showModal();
     else keyDialog.setAttribute('open', '');
     keyInput.focus();
@@ -528,23 +804,26 @@
 
   function saveKey() {
     var v = keyInput.value.trim();
-    if (v && v.length < 16) { toast('That key looks too short'); return; }
+    var d = dncKeyInput.value.trim();
+    if ((v && v.length < 16) || (d && d.length < 16)) { toast('That key looks too short'); return; }
     writeLS(LS_KEY, v);
+    writeLS(LS_DNC_KEY, d);
     closeKeyDialog();
-    toast(v ? 'Using your access key' : 'Using the demo key');
+    toast((v || d) ? 'Using your access keys' : 'Using the demo keys');
   }
 
-  $('#keySave').addEventListener('click', saveKey);
-
-  // The dialog uses method="dialog", which would otherwise close on Enter
-  // without keeping what was typed.
+  /* Save is a submit button, so this covers both the click and Enter. The
+     dialog uses method="dialog", which would otherwise close without keeping
+     what was typed. */
   $('#keyForm').addEventListener('submit', function (e) { e.preventDefault(); saveKey(); });
 
   $('#keyReset').addEventListener('click', function () {
     writeLS(LS_KEY, '');
+    writeLS(LS_DNC_KEY, '');
     keyInput.value = '';
+    dncKeyInput.value = '';
     closeKeyDialog();
-    toast('Using the demo key');
+    toast('Using the demo keys');
   });
 
   // ---------------------------------------------------------
