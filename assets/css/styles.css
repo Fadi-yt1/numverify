@@ -1,5 +1,5 @@
 /* ============================================================
-   NumVerify — Global Phone Number Validation & Lookup
+   Num Validator — Global Phone Number Validation & Lookup
    ============================================================ */
 
 :root {
@@ -127,14 +127,6 @@ code {
 .site-nav a:hover { color: var(--text); text-decoration: none; }
 
 .header-actions { display: flex; align-items: center; gap: 10px; }
-.pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: .74rem; font-weight: 600; padding: 6px 11px; border-radius: 999px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
-  white-space: nowrap;
-}
-.pill svg { width: 13px; height: 13px; }
-.pill-secure { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); background: var(--ok-bg); }
 
 .icon-btn {
   width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer;
@@ -147,7 +139,6 @@ code {
 [data-theme="light"] .icon-moon { display: none; }
 
 @media (max-width: 900px) { .site-nav { display: none; } .header-actions { margin-left: auto; } }
-@media (max-width: 520px) { .pill-secure { display: none; } }
 
 /* ---------------- hero ---------------- */
 .hero { position: relative; padding: 68px 0 40px; overflow: hidden; }
@@ -371,7 +362,7 @@ select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px
   border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .feat-icon svg { width: 20px; height: 20px; }
-.feat-icon.i-check, .feat-icon.i-lock { background: var(--ok-bg); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 28%, transparent); }
+.feat-icon.i-check { background: var(--ok-bg); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 28%, transparent); }
 .feat-icon.i-pin { background: var(--warn-bg); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 28%, transparent); }
 
 /* ---------------- coverage ---------------- */

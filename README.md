@@ -1,4 +1,4 @@
-# NumVerify — Global Phone Number Validation & Lookup
+# Num Validator — Global Phone Number Validation & Lookup
 
 A static, no-login web app that validates phone numbers anywhere in the world and returns a
 full profile of the number: validity, carrier, line type, country and location.
@@ -15,7 +15,6 @@ served directly from GitHub Pages.
 | **Line type detection** | `mobile`, `landline`, `voip`, `toll_free`, `premium_rate`, `satellite`, `paging`, `special_services` |
 | **Country detection** | Country name, ISO country code and dialling prefix |
 | **Location detection** | Region/state/city where the numbering plan publishes it |
-| **256-bit HTTPS encryption** | Every lookup travels over TLS |
 
 Plus: 237-country picker with dial codes, E.164 copy button, raw JSON view, recent-lookup
 history in `localStorage`, light/dark theme, deep links (`?number=+14158586273`) and a

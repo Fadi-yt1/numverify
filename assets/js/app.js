@@ -1,5 +1,5 @@
 /* ============================================================
-   NumVerify — client-side phone number validation & lookup
+   Num Validator — client-side phone number validation & lookup
    No backend, no login. Talks to the numverify API directly.
    ============================================================ */
 (function () {
@@ -322,8 +322,8 @@
       '<div class="result-foot">' +
         '<span class="micro">' +
           (data.__secure
-            ? 'Queried over 256-bit HTTPS directly.'
-            : 'Queried over 256-bit HTTPS via an encrypted relay.') +
+            ? 'Queried directly.'
+            : 'Queried via a relay.') +
         '</span>' +
         '<button type="button" class="link-btn raw-toggle" data-raw>Show raw JSON</button>' +
       '</div>' +
