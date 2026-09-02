@@ -110,8 +110,8 @@ Implementation notes:
 - Errors are read from both envelopes in play: api.data.gov's `{"error":{code,message}}` and
   the FTC's JSON:API `{"errors":[{status,title,detail}]}`. Missing that second shape is what
   once made a plain HTTP 400 surface as a useless "unexpected payload".
-- A failure that is not JSON reports its HTTP status and a slice of the body, and a real API
-  error is preferred over a later relay timeout when both occur in one fallback chain.
+- A failure that is not JSON reports its HTTP status and a slice of the body, so a 404 or an
+  HTML error page is never mistaken for a shape mismatch.
 - Rows are read defensively (`dncRows` / `dncField`): a bare array or `data`/`results`/
   `records`, with fields on the row or under a JSON:API `attributes` object, in hyphen, snake
   or camel spelling.
@@ -139,32 +139,32 @@ Two things worth knowing about that:
 The bundled api.data.gov key sits next to it as `DNC_DEMO_KEY` and carries the same caveat.
 Get your own free key at [api.data.gov/signup](https://api.data.gov/signup).
 
-### HTTP vs HTTPS on the free plan
+### Direct calls only — and what that costs
 
-numverify only serves its **encrypted** endpoint on paid plans; free-plan keys are limited to
-plain HTTP and answer `https://` requests with error `105`. A page served from GitHub Pages is
-itself HTTPS, and browsers block plain-HTTP requests from an HTTPS page as mixed content.
+Every request goes from the visitor's browser straight to the API vendor. **No proxy, no
+relay, no third party.** The keys are seen by numverify and api.data.gov and by nobody else,
+which is the whole point of the arrangement — earlier versions relayed through public CORS
+proxies, and that meant handing the keys to services with no accountability for them.
 
-`app.js` handles both cases with a transport chain (see `TRANSPORTS`):
+That choice has a real cost, and it lands entirely on numverify:
 
-1. `https://apilayer.net/api/validate` — used directly whenever the key allows it, so the
-   request goes nowhere but numverify.
-2. If and only if that fails, the request is relayed over HTTPS through
-   [corsproxy.io](https://corsproxy.io), which can reach the plain-HTTP endpoint.
+numverify serves its **encrypted** endpoint on paid plans only. Free-plan keys are limited to
+plain HTTP, and a page served over HTTPS (as GitHub Pages is) cannot call a plain-HTTP
+endpoint — browsers block it as mixed content. A relay used to bridge that gap. Without one,
+**a free-plan numverify key cannot work from this site at all**: the HTTPS call answers with
+error `105` and there is nothing to fall back to.
 
-There is one relay, not the three keyless public proxies used earlier: those could not be
-relied on, each failure cost a timeout before the next was tried, and they sent the API keys
-to services we have no account with. The trade-off is a single point of failure — if corsproxy
-is down or over quota, only the direct call remains.
+So the site reports it plainly instead of failing vaguely. Error `105` is now terminal, like an
+invalid or exhausted key, and says what to do about it: use a key whose plan allows HTTPS, or
+run the site behind your own proxy. If you want that proxy, a Cloudflare Worker or a
+Netlify/Vercel function you control is the right shape — it keeps the key server-side instead
+of merely moving which stranger sees it. Point `API_PATH` at it.
 
-The corsproxy key sits in `assets/js/core.js` as `CORSPROXY_KEY` and is public for the same
-reason the API keys are. Secrecy is not the control: **restrict the key to the site's origin in
-the corsproxy.io dashboard**, so a copy lifted from the page source is useless elsewhere.
+The FTC endpoint is unaffected as long as it sends CORS headers, since it is HTTPS either way.
 
-The result card says which path was used. Note the relay path means the access key transits a
-third-party service — another reason to use your own proxy if the key is sensitive. Errors that
-would fail identically on every transport (invalid key `101`, inactive account `102`, quota
-exhausted `104`) short-circuit the chain and are reported straight away.
+Errors that would fail identically however they were sent — invalid key `101`, inactive account
+`102`, exhausted quota `104`, HTTPS not on the plan `105` — are reported immediately rather
+than retried.
 
 ## Project layout
 

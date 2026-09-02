@@ -37,7 +37,8 @@
     102: 'The API account is inactive. Add your own access key to continue.',
     103: 'The requested API endpoint does not exist.',
     104: 'The monthly request quota for this access key has been used up.',
-    105: 'This access key is not permitted to use the encrypted endpoint.',
+    105: 'This numverify key is limited to the plain-HTTP endpoint, which a secure page cannot call. ' +
+         'Use a key whose plan allows HTTPS, or run the site behind your own proxy.',
     106: 'No results — the number could not be processed.',
     210: 'No phone number was supplied.',
     211: 'The phone number supplied is not numeric.'
@@ -120,14 +121,13 @@
     var err = new Error(API_ERRORS[code] || (error && error.info) || 'The validation service rejected the request.');
     err.code = code;
     err.__api = true;
-    // An invalid key, an inactive account or an exhausted quota fails the same
-    // way on every transport, so there is no point retrying those.
-    err.__fatal = (code === 101 || code === 102 || code === 104);
+    // There is no relay to retry against, so a key the plan will not serve over
+    // HTTPS (105) fails as finally as an invalid, inactive or exhausted one.
+    err.__fatal = (code === 101 || code === 102 || code === 104 || code === 105);
     return err;
   }
 
-  /* numverify. Error 105 (encrypted endpoint not on this plan) is not fatal —
-     it is exactly the case the relays exist to cover. */
+  /* numverify, called directly and only directly. */
   function interpretNumverify(data) {
     if (data.success === false && data.error) {
       throw apiError(Number(data.error.code), data.error);
@@ -139,10 +139,8 @@
   }
 
   function lookup(raw) {
-    var qs = buildQuery(raw).qs;
-    return runTransports('https://' + API_PATH + '?' + qs,
-                         'http://' + API_PATH + '?' + qs,
-                         interpretNumverify);
+    var url = 'https://' + API_PATH + '?' + buildQuery(raw).qs;
+    return runTransports(url, url, interpretNumverify);
   }
 
   // ---------------------------------------------------------
@@ -200,9 +198,7 @@
     var foot =
       '<div class="result-foot">' +
         '<span class="micro">' +
-          (data.__secure
-            ? 'Queried directly.'
-            : 'Queried via a relay.') +
+          'Queried numverify directly — the key went to no one else.' +
         '</span>' +
         '<button type="button" class="link-btn raw-toggle" data-raw>Show raw JSON</button>' +
       '</div>' +
