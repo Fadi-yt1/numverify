@@ -149,8 +149,17 @@ itself HTTPS, and browsers block plain-HTTP requests from an HTTPS page as mixed
 
 1. `https://apilayer.net/api/validate` — used directly whenever the key allows it, so the
    request goes nowhere but numverify.
-2. If and only if that fails, the request is relayed over HTTPS through a public CORS relay
-   (allorigins → codetabs → corsproxy) that can reach the plain-HTTP endpoint.
+2. If and only if that fails, the request is relayed over HTTPS through
+   [corsproxy.io](https://corsproxy.io), which can reach the plain-HTTP endpoint.
+
+There is one relay, not the three keyless public proxies used earlier: those could not be
+relied on, each failure cost a timeout before the next was tried, and they sent the API keys
+to services we have no account with. The trade-off is a single point of failure — if corsproxy
+is down or over quota, only the direct call remains.
+
+The corsproxy key sits in `assets/js/core.js` as `CORSPROXY_KEY` and is public for the same
+reason the API keys are. Secrecy is not the control: **restrict the key to the site's origin in
+the corsproxy.io dashboard**, so a copy lifted from the page source is useless elsewhere.
 
 The result card says which path was used. Note the relay path means the access key transits a
 third-party service — another reason to use your own proxy if the key is sensitive. Errors that

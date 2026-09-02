@@ -21,16 +21,29 @@
 
   var DEMO_KEY   = 'c2ebb50af59ed2f763aeb27b5ad21d5b';
 
+  /* Public, like the API keys: a no-login static site has to ship whatever it
+     calls with. Restrict this key to the site's own origin in the corsproxy.io
+     dashboard — that, not secrecy, is what stops other sites spending the quota. */
+  var CORSPROXY_KEY = '12d4731b';
+
   /* numverify serves HTTPS on paid plans only. On the free plan the encrypted
      endpoint answers with error 105, and a plain-HTTP call from an HTTPS page is
      blocked by the browser as mixed content. So: always try the encrypted
      endpoint first, and only if it is unavailable relay the request through a
-     public HTTPS relay that can reach the plain-HTTP endpoint. */
+     proxy that can reach the plain-HTTP endpoint.
+
+     One relay, not three. The keyless public proxies used before could not be
+     relied on and each failure cost a timeout before the next was tried; a
+     single keyed relay fails fast and keeps the API keys away from services we
+     have no account with. The cost is a single point of failure: if corsproxy
+     is down or over quota, the relay path is gone and only the direct call
+     remains. */
   var TRANSPORTS = [
     { name: 'direct', direct: true, wrap: function (url) { return url; } },
-    { name: 'relay-allorigins', wrap: function (url) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url); } },
-    { name: 'relay-codetabs',   wrap: function (url) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url); } },
-    { name: 'relay-corsproxy',  wrap: function (url) { return 'https://corsproxy.io/?url=' + encodeURIComponent(url); } }
+    { name: 'relay-corsproxy',
+      wrap: function (url) {
+        return 'https://corsproxy.io/?key=' + CORSPROXY_KEY + '&url=' + encodeURIComponent(url);
+      } }
   ];
 
   // ---------------------------------------------------------
