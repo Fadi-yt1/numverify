@@ -21,21 +21,29 @@
 
   var DEMO_KEY   = 'c2ebb50af59ed2f763aeb27b5ad21d5b';
 
-  /* Direct calls only, by design: an API key must never transit a third party.
-     Every request goes from the visitor's browser to the API vendor and nowhere
-     else, so the keys are seen by numverify and api.data.gov alone.
+  /* Public, like the API keys: a no-login static site has to ship whatever it
+     calls with. Restrict this key to the site's own origin in the corsproxy.io
+     dashboard — that, not secrecy, is what stops other sites spending the quota. */
+  var CORSPROXY_KEY = '12d4731b';
 
-     The relay that used to sit here existed for one reason — numverify serves
-     its encrypted endpoint on paid plans only, and an HTTPS page cannot call a
-     plain-HTTP one. Removing it means a free-plan numverify key can no longer
-     work from this site at all: the direct HTTPS call answers with error 105
-     and there is nothing to fall back to. That is reported plainly rather than
-     retried. The FTC endpoint is unaffected as long as it sends CORS headers.
+  /* numverify serves HTTPS on paid plans only. On the free plan the encrypted
+     endpoint answers with error 105, and a plain-HTTP call from an HTTPS page is
+     blocked by the browser as mixed content. So: always try the encrypted
+     endpoint first, and only if it is unavailable relay the request through a
+     proxy that can reach the plain-HTTP endpoint.
 
-     The chain is kept as a list so the machinery still supports a fallback if
-     one is ever wanted — but anything added here would see the keys. */
+     One relay, not three. The keyless public proxies used before could not be
+     relied on and each failure cost a timeout before the next was tried; a
+     single keyed relay fails fast and keeps the API keys away from services we
+     have no account with. The cost is a single point of failure: if corsproxy
+     is down or over quota, the relay path is gone and only the direct call
+     remains. */
   var TRANSPORTS = [
-    { name: 'direct', direct: true, wrap: function (url) { return url; } }
+    { name: 'direct', direct: true, wrap: function (url) { return url; } },
+    { name: 'relay-corsproxy',
+      wrap: function (url) {
+        return 'https://corsproxy.io/?key=' + CORSPROXY_KEY + '&url=' + encodeURIComponent(url);
+      } }
   ];
 
   // ---------------------------------------------------------

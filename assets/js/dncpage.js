@@ -88,8 +88,9 @@
 
     var foot =
       '<div class="result-foot">' +
-        '<span class="micro">FTC consumer complaint data, queried directly — the key went to ' +
-          'no one else. This is <strong>not</strong> a Do Not Call Registry scrub.</span>' +
+        '<span class="micro">FTC consumer complaint data · ' +
+          (result.__secure ? 'queried directly.' : 'queried via a relay.') +
+          ' This is <strong>not</strong> a Do Not Call Registry scrub.</span>' +
         '<button type="button" class="link-btn raw-toggle" data-raw>Show raw JSON</button>' +
       '</div>' +
       '<pre class="raw-json" hidden>' + esc(JSON.stringify(stripInternal(result.raw), null, 2)) + '</pre>';
