@@ -330,9 +330,7 @@
         renderNotice('error',
           fatal ? 'The API key could not be used' : 'Lookup failed',
           (err && err.message ? err.message : 'Something went wrong.') +
-          (fatal
-            ? ' Open “API key settings” to use your own access key.'
-            : ' Please check your connection and try again.'));
+          (fatal ? ' Open “API key settings” to use your own access key.' : ''));
       })
       .then(function () {
         busy = false;

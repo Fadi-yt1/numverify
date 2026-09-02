@@ -127,6 +127,25 @@
       })
       .catch(function (err) {
         clearTimeout(timer);
+        if (err && err.__api) throw err;
+
+        /* fetch() rejects with a bare TypeError ("Failed to fetch") whenever the
+           browser refuses the exchange, and deliberately says no more — the
+           status and body are withheld from script. It is almost never the
+           user's connection: a missing Access-Control-Allow-Origin on the
+           response, a blocked or refused host, or mixed content all land here.
+           Naming the host at least says which leg failed. */
+        var host = url;
+        try { host = new URL(url).host; } catch (e) { /* keep the raw url */ }
+
+        if (err && err.name === 'AbortError') {
+          throw new Error(host + ' did not answer within ' + Math.round(TIMEOUT_MS / 1000) + 's.');
+        }
+        if (err instanceof TypeError) {
+          throw new Error(host + ' could not be reached — ' + err.message +
+            '. The browser blocked the exchange rather than the server refusing it: ' +
+            'usually a missing CORS header on the response, or the host being unreachable.');
+        }
         throw err;
       });
   }
@@ -165,6 +184,11 @@
         })
         .catch(function (err) {
           if (err && err.__fatal) throw err;
+          // Say which leg failed; with a direct call and a relay in the chain,
+          // "Failed to fetch" alone does not identify the culprit.
+          if (err && !err.__api && err.message && err.message.indexOf(t.name) === -1) {
+            err = new Error(t.name + ': ' + err.message);
+          }
           lastError = keepError(lastError, err);
           return attempt(i + 1);
         });

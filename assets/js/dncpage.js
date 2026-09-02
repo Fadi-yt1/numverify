@@ -161,8 +161,7 @@
         renderNotice('error',
           fatal ? 'The API key could not be used' : 'Lookup failed',
           (err && err.message ? err.message : 'Something went wrong.') +
-          (fatal ? ' Open “API key settings” to use your own api.data.gov key.'
-                 : ' Please check your connection and try again.'));
+          (fatal ? ' Open “API key settings” to use your own api.data.gov key.' : ''));
       })
       .then(function () { setBusy(false, 'Check number'); });
   }
